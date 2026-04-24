@@ -1,0 +1,43 @@
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-icon">🧠</div>
+    <div class="sidebar-logo-text">
+      <div class="sidebar-logo-title">PMMS</div>
+      <div class="sidebar-logo-sub">Memory Dashboard</div>
+    </div>
+    <button class="sidebar-toggle" onclick="toggleSidebar()" title="Collapse">&#x2715;</button>
+  </div>
+
+  <div class="nav-section-label">Main</div>
+  <a href="/" class="nav-item {% if active == 'dashboard' %}active{% endif %}">
+    <span class="nav-icon">⚡</span>
+    <span class="nav-label">Dashboard</span>
+  </a>
+  <a href="/analytics" class="nav-item {% if active == 'analytics' %}active{% endif %}">
+    <span class="nav-icon">📈</span>
+    <span class="nav-label">Analytics</span>
+  </a>
+
+  <div class="nav-section-label">Intelligence</div>
+  <a href="/model" class="nav-item {% if active == 'model' %}active{% endif %}">
+    <span class="nav-icon">🤖</span>
+    <span class="nav-label">ML Model</span>
+  </a>
+
+  <div class="nav-section-label">Data</div>
+  <a href="/logs" class="nav-item {% if active == 'logs' %}active{% endif %}">
+    <span class="nav-icon">🗄️</span>
+    <span class="nav-label">DB Logs</span>
+  </a>
+  <a href="/export.csv" class="nav-item" target="_blank" rel="noopener">
+    <span class="nav-icon">⬇</span>
+    <span class="nav-label">Export CSV</span>
+  </a>
+
+  <div class="nav-footer">
+    <div class="nav-status-dot"></div>
+    <span class="nav-label" id="navSamples">— samples</span>
+  </div>
+</nav>
+
+<button class="sidebar-open-btn" id="sidebarOpenBtn" onclick="toggleSidebar()" title="Open menu">☰</button>

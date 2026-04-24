@@ -1,0 +1,22 @@
+services:
+  pmms:
+    build: .
+    container_name: pmms_web
+    ports:
+      - "5000:5000"
+    volumes:
+      - pmms_data:/app/data
+    environment:
+      - PORT=5000
+      - FLASK_DEBUG=0
+      - TRAIN_WINDOW=300
+      - DB_PATH=/app/data/memory_logs.db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pmms_data:

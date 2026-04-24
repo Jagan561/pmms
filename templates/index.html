@@ -1,0 +1,523 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Predictive Memory Management</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="app-shell">
+
+{% with active="dashboard" %}{% include "_nav.html" %}{% endwith %}
+
+<div class="page-content" id="pageContent">
+
+<!-- ── PAGE HEADER ── -->
+<div class="page-header">
+  <div>
+    <div class="page-header-title">⚡ Dashboard</div>
+    <div class="page-header-sub">Live RAM monitoring · OS + ML + DAA + DBMS</div>
+  </div>
+  <div class="page-header-right">
+    <span class="badge badge-os">OS</span>
+    <span class="badge badge-ml">ML</span>
+    <span class="badge badge-db">DB</span>
+    <span class="badge badge-daa">DAA</span>
+    <span class="live-dot" title="Live"></span>
+  </div>
+</div>
+
+<!-- ── MAIN ── -->
+<div class="main-wrapper">
+
+  <!-- Metrics Row -->
+  <div class="metrics-grid">
+    <div class="metric-card blue">
+      <div class="metric-icon">💾</div>
+      <div class="metric-label">Used RAM</div>
+      <div class="metric-value" id="mUsed">—</div>
+      <div class="metric-sub">MB currently used</div>
+      <div class="progress-wrap"><div class="progress-bar" id="ramBar" style="width:0%"></div></div>
+    </div>
+    <div class="metric-card green">
+      <div class="metric-icon">📊</div>
+      <div class="metric-label">RAM %</div>
+      <div class="metric-value" id="mPercent">—</div>
+      <div class="metric-sub">of total memory</div>
+      <div class="progress-wrap"><div class="progress-bar" id="pctBar" style="width:0%;background:linear-gradient(90deg,#10b981,#34d399)"></div></div>
+    </div>
+    <div class="metric-card purple">
+      <div class="metric-icon">🗄️</div>
+      <div class="metric-label">DB Samples</div>
+      <div class="metric-value" id="mSamples">0</div>
+      <div class="metric-sub">snapshots stored</div>
+    </div>
+    <div class="metric-card orange">
+      <div class="metric-icon">🔮</div>
+      <div class="metric-label">Prediction</div>
+      <div class="metric-value" id="mPrediction">—</div>
+      <div class="metric-sub">MB in 60s (ML)</div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls-panel">
+    <div class="controls-left">
+      <button class="btn btn-primary" onclick="doSample()" id="btnSample">
+        <span>⚡</span> Sample RAM
+      </button>
+      <button class="btn btn-success" onclick="doTrain()" id="btnTrain">
+        <span>🤖</span> Train Model
+      </button>
+      <button class="btn btn-purple" onclick="doPredict()" id="btnPredict">
+        <span>🔮</span> Predict 60s
+      </button>
+      <button class="btn btn-danger" onclick="doReset()" id="btnReset">
+        <span>🗑️</span> Reset DB
+      </button>
+    </div>
+    <div class="controls-right">
+      <label style="font-size:12px;color:var(--text-muted);font-weight:500;">Auto-sample:</label>
+      <select class="styled-select" id="autoSample">
+        <option value="off">Off</option>
+        <option value="5">Every 5s</option>
+        <option value="10" selected>Every 10s</option>
+        <option value="30">Every 30s</option>
+      </select>
+      <a class="export-link" href="/export.csv" target="_blank" rel="noopener">
+        ⬇ Export CSV
+      </a>
+    </div>
+  </div>
+
+  <!-- Content Grid -->
+  <div class="content-grid">
+
+    <!-- Left: Chart + Table -->
+    <div style="display:flex;flex-direction:column;gap:20px;">
+
+      <!-- Chart Panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title"><span class="dot"></span> RAM Usage Over Time</div>
+          <div style="font-size:11px;color:var(--text-muted);">Linear Regression · DAA Allocator</div>
+        </div>
+        <div class="panel-body">
+          <div id="output" class="info">Ready — click "Sample RAM" to begin collecting data.</div>
+          <div class="chart-container" style="margin-top:16px;">
+            <canvas id="memoryChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Table Panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title"><span class="dot" style="background:var(--accent-orange);box-shadow:0 0 6px var(--accent-orange)"></span> DB Snapshot Log</div>
+          <div style="font-size:11px;color:var(--text-muted);">SQLite · system_memory_logs</div>
+        </div>
+        <div class="panel-body" style="padding:0;">
+          <div class="table-wrap">
+            <table id="logsTable">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Process</th>
+                  <th>Used (MB)</th>
+                  <th>Total (MB)</th>
+                  <th>RAM %</th>
+                </tr>
+              </thead>
+              <tbody id="logsBody">
+                <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px;">No data yet — sample RAM to populate.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right: Sidebar -->
+    <div class="sidebar-panel">
+
+      <!-- Gauge -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title"><span class="dot" style="background:var(--accent-green);box-shadow:0 0 6px var(--accent-green)"></span> Memory Gauge</div>
+        </div>
+        <div class="panel-body">
+          <div class="gauge-wrap">
+            <svg width="140" height="140" class="gauge-svg" viewBox="0 0 140 140">
+              <defs>
+                <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#3b82f6"/>
+                  <stop offset="100%" stop-color="#06b6d4"/>
+                </linearGradient>
+              </defs>
+              <circle class="gauge-track" cx="70" cy="70" r="54"/>
+              <circle class="gauge-fill" id="gaugeFill" cx="70" cy="70" r="54"
+                stroke-dasharray="339.3" stroke-dashoffset="339.3"/>
+            </svg>
+            <div class="gauge-label" id="gaugeLabel">0%</div>
+            <div class="gauge-sub">RAM Utilization</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- System Info -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title"><span class="dot" style="background:var(--accent-purple);box-shadow:0 0 6px var(--accent-purple)"></span> System Info</div>
+        </div>
+        <div class="panel-body">
+          <div class="stat-row">
+            <span class="stat-key">Total RAM</span>
+            <span class="stat-val" id="siTotal">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Used RAM</span>
+            <span class="stat-val" id="siUsed">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Free RAM</span>
+            <span class="stat-val" id="siFree">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">Last Sampled</span>
+            <span class="stat-val" id="siTime" style="font-size:11px;">—</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">DB Samples</span>
+            <span class="stat-val" id="siSamples">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Concepts -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title"><span class="dot" style="background:var(--accent-orange);box-shadow:0 0 6px var(--accent-orange)"></span> Concepts Used</div>
+        </div>
+        <div class="panel-body">
+          <div class="stat-row">
+            <span class="stat-key">OS Layer</span>
+            <span class="stat-val" style="color:var(--accent-green);font-size:11px;">psutil · virtual_memory</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">ML Model</span>
+            <span class="stat-val" style="color:var(--accent-purple);font-size:11px;">LinearRegression · sklearn</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">DBMS</span>
+            <span class="stat-val" style="color:var(--accent-orange);font-size:11px;">SQLite · WAL mode</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-key">DAA</span>
+            <span class="stat-val" style="color:var(--accent-blue);font-size:11px;">Predictive Allocator</span>
+          </div>
+          <div class="concept-tags">
+            <span class="concept-tag tag-os">OS</span>
+            <span class="concept-tag tag-ml">ML</span>
+            <span class="concept-tag tag-db">DBMS</span>
+            <span class="concept-tag tag-daa">DAA</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div><!-- /main-wrapper -->
+</div><!-- /page-content -->
+</div><!-- /app-shell -->
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Footer -->
+<footer>
+  Predictive Memory Management Dashboard &nbsp;·&nbsp; OS + ML + DAA + DBMS &nbsp;·&nbsp; Flask + SQLite + scikit-learn
+</footer>
+
+<script>
+  /* ── SIDEBAR TOGGLE ── */
+  function toggleSidebar() {
+    const sb = document.getElementById("sidebar");
+    const pc = document.getElementById("pageContent");
+    const ob = document.getElementById("sidebarOpenBtn");
+    sb.classList.toggle("collapsed");
+    pc.classList.toggle("full");
+    ob.classList.toggle("visible");
+  }
+
+  /* ── NAV SAMPLE COUNT ── */
+  function updateNavSamples(n) {
+    const el = document.getElementById("navSamples");
+    if (el) el.textContent = n + " samples";
+  }
+
+  /* ── UTILS ── */
+  let chartInstance = null;
+  let autoTimer = null;
+
+  function fmtTime(epochSeconds) {
+    if (!epochSeconds) return "—";
+    return new Date(epochSeconds * 1000).toLocaleString();
+  }
+
+  function fmtTimeShort(epochSeconds) {
+    if (!epochSeconds) return "—";
+    const d = new Date(epochSeconds * 1000);
+    return d.toLocaleTimeString();
+  }
+
+  function showToast(msg, type = "success") {
+    const t = document.getElementById("toast");
+    const icon = type === "success" ? "✅" : type === "error" ? "❌" : "ℹ️";
+    t.innerHTML = `<span>${icon}</span><span>${msg}</span>`;
+    t.className = `show toast-${type}`;
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => { t.className = ""; }, 3000);
+  }
+
+  function setOutput(obj, type = "info") {
+    const el = document.getElementById("output");
+    el.className = type;
+    el.innerText = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+  }
+
+  function setBusy(id, busy) {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.disabled = busy;
+    if (busy) {
+      btn._orig = btn.innerHTML;
+      btn.innerHTML = `<span class="spinner"></span> Working…`;
+    } else if (btn._orig) {
+      btn.innerHTML = btn._orig;
+    }
+  }
+
+  /* ── GAUGE ── */
+  function updateGauge(pct) {
+    const circ = 2 * Math.PI * 54; // 339.3
+    const fill = document.getElementById("gaugeFill");
+    const label = document.getElementById("gaugeLabel");
+    const offset = circ - (pct / 100) * circ;
+    fill.style.strokeDashoffset = offset;
+    label.textContent = pct.toFixed(1) + "%";
+
+    // Color shift
+    if (pct > 85) fill.style.stroke = "#ef4444";
+    else if (pct > 65) fill.style.stroke = "#f59e0b";
+    else fill.style.stroke = "url(#gaugeGrad)";
+  }
+
+  /* ── STATUS ── */
+  function updateStatus() {
+    fetch("/status")
+      .then(r => r.json())
+      .then(s => {
+        const n = s.samples ?? 0;
+        document.getElementById("mSamples").textContent = n;
+        document.getElementById("siSamples").textContent = n;
+        updateNavSamples(n);
+
+        if (s.latest) {
+          const l = s.latest;
+          document.getElementById("mUsed").textContent = l.used_mb;
+          document.getElementById("mPercent").textContent = l.percent.toFixed(1) + "%";
+          document.getElementById("siTotal").textContent = l.total_mb + " MB";
+          document.getElementById("siUsed").textContent = l.used_mb + " MB";
+          document.getElementById("siFree").textContent = (l.total_mb - l.used_mb) + " MB";
+          document.getElementById("siTime").textContent = fmtTime(l.time);
+          document.getElementById("ramBar").style.width = ((l.used_mb / l.total_mb) * 100).toFixed(1) + "%";
+          document.getElementById("pctBar").style.width = l.percent.toFixed(1) + "%";
+          updateGauge(l.percent);
+        }
+      })
+      .catch(() => {});
+  }
+
+  /* ── SAMPLE ── */
+  function doSample() {
+    setBusy("btnSample", true);
+    fetch("/sample")
+      .then(r => r.json())
+      .then(d => {
+        setOutput(`✅ Sampled at ${fmtTime(d.time)}\n   Used: ${d.used_mb} MB / ${d.total_mb} MB (${d.percent}%)`, "success");
+        showToast(`RAM sampled: ${d.used_mb} MB (${d.percent}%)`, "success");
+        loadTable();
+        updateStatus();
+      })
+      .catch(e => { setOutput("Error: " + e, "error"); showToast("Sample failed", "error"); })
+      .finally(() => setBusy("btnSample", false));
+  }
+
+  /* ── TRAIN ── */
+  function doTrain() {
+    setBusy("btnTrain", true);
+    fetch("/train")
+      .then(async r => { const j = await r.json(); if (!r.ok) throw j; return j; })
+      .then(d => {
+        setOutput(`🤖 Model trained on ${d.meta?.samples ?? "?"} samples\n   Status: ${d.status}`, "success");
+        showToast("Model trained successfully", "success");
+        if (d.history) plotChart(d.history);
+        loadTable();
+        updateStatus();
+      })
+      .catch(e => {
+        const msg = e?.error ?? String(e);
+        setOutput("⚠️ " + msg, "error");
+        showToast(msg, "error");
+      })
+      .finally(() => setBusy("btnTrain", false));
+  }
+
+  /* ── PREDICT ── */
+  function doPredict() {
+    setBusy("btnPredict", true);
+    fetch("/predict/60")
+      .then(async r => { const j = await r.json(); if (!r.ok) throw j; return j; })
+      .then(d => {
+        document.getElementById("mPrediction").textContent = d.predicted_usage;
+        setOutput(`🔮 Prediction for +60s:\n   Predicted RAM: ${d.predicted_usage} MB\n   Target time: ${fmtTime(d.time)}`, "info");
+        showToast(`Predicted: ${d.predicted_usage} MB in 60s`, "success");
+      })
+      .catch(e => {
+        const msg = e?.error ?? String(e);
+        setOutput("⚠️ " + msg, "error");
+        showToast(msg, "error");
+      })
+      .finally(() => setBusy("btnPredict", false));
+  }
+
+  /* ── RESET ── */
+  function doReset() {
+    if (!confirm("Delete ALL collected RAM samples from the database?")) return;
+    setBusy("btnReset", true);
+    fetch("/reset?confirm=YES", { method: "POST" })
+      .then(async r => { const j = await r.json(); if (!r.ok) throw j; return j; })
+      .then(d => {
+        setOutput("🗑️ Database cleared. All samples deleted.", "info");
+        showToast("Database reset", "success");
+        document.getElementById("mPrediction").textContent = "—";
+        loadTable();
+        updateStatus();
+        if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+      })
+      .catch(e => { setOutput("Error: " + String(e), "error"); showToast("Reset failed", "error"); })
+      .finally(() => setBusy("btnReset", false));
+  }
+
+  /* ── CHART ── */
+  function plotChart(history) {
+    const ctx = document.getElementById("memoryChart").getContext("2d");
+    const palette = ["#3b82f6","#10b981","#8b5cf6","#f59e0b","#ef4444","#06b6d4"];
+    const keys = Object.keys(history);
+    if (!keys.length) return;
+
+    const datasets = keys.map((proc, i) => ({
+      label: proc,
+      data: history[proc].map(h => h[1]),
+      borderColor: palette[i % palette.length],
+      backgroundColor: palette[i % palette.length] + "18",
+      fill: true,
+      tension: 0.4,
+      pointRadius: 3,
+      pointHoverRadius: 6,
+      borderWidth: 2,
+    }));
+
+    const labels = history[keys[0]].map(h => fmtTimeShort(h[0]));
+
+    if (chartInstance) chartInstance.destroy();
+
+    chartInstance = new Chart(ctx, {
+      type: "line",
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        animation: { duration: 600 },
+        plugins: {
+          legend: {
+            display: true,
+            labels: { color: "#94a3b8", font: { family: "Inter", size: 12 }, boxWidth: 12 }
+          },
+          tooltip: {
+            backgroundColor: "#111827",
+            borderColor: "#1e293b",
+            borderWidth: 1,
+            titleColor: "#f1f5f9",
+            bodyColor: "#94a3b8",
+            padding: 10,
+          }
+        },
+        scales: {
+          y: {
+            title: { display: true, text: "Used RAM (MB)", color: "#475569", font: { size: 11 } },
+            ticks: { color: "#475569", font: { family: "JetBrains Mono", size: 11 } },
+            grid: { color: "rgba(30,41,59,0.8)" },
+          },
+          x: {
+            title: { display: true, text: "Time", color: "#475569", font: { size: 11 } },
+            ticks: { color: "#475569", font: { family: "JetBrains Mono", size: 10 }, maxTicksLimit: 10 },
+            grid: { color: "rgba(30,41,59,0.5)" },
+          }
+        }
+      }
+    });
+  }
+
+  /* ── TABLE ── */
+  function loadTable() {
+    fetch("/data")
+      .then(r => r.json())
+      .then(rows => {
+        const tbody = document.getElementById("logsBody");
+        if (!rows.length) {
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px;">No data yet — sample RAM to populate.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = rows.map(r => {
+          const pct = r.percent ?? 0;
+          const cls = pct > 85 ? "percent-high" : pct > 65 ? "percent-mid" : "percent-low";
+          return `<tr>
+            <td class="td-time">${fmtTime(r.time)}</td>
+            <td class="td-process">${r.process}</td>
+            <td class="td-usage">${r.usage}</td>
+            <td class="td-total">${r.total_mb ?? "—"}</td>
+            <td><span class="percent-pill ${cls}">${pct.toFixed(1)}%</span></td>
+          </tr>`;
+        }).join("");
+      })
+      .catch(() => {});
+  }
+
+  /* ── AUTO SAMPLE ── */
+  function setAutoSample(seconds) {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    if (!seconds) return;
+    autoTimer = setInterval(doSample, seconds * 1000);
+  }
+
+  document.getElementById("autoSample").addEventListener("change", e => {
+    const v = e.target.value;
+    setAutoSample(v === "off" ? null : parseInt(v, 10));
+    showToast(v === "off" ? "Auto-sample disabled" : `Auto-sample every ${v}s`, "info");
+  });
+
+  /* ── INIT ── */
+  window.onload = () => {
+    loadTable();
+    updateStatus();
+    setInterval(updateStatus, 5000);
+    const v = document.getElementById("autoSample").value;
+    setAutoSample(v === "off" ? null : parseInt(v, 10));
+  };
+</script>
+</body>
+</html>

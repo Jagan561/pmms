@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ML Model · PMMS</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="app-shell">
+
+{% with active="model" %}{% include "_nav.html" %}{% endwith %}
+
+<div class="page-content" id="pageContent">
+  <div class="page-header">
+    <div>
+      <div class="page-header-title">🤖 ML Model</div>
+      <div class="page-header-sub">Linear Regression · scikit-learn · Predictive Allocator (DAA)</div>
+    </div>
+    <div class="page-header-right">
+      <span class="badge badge-ml">ML</span>
+      <span class="badge badge-daa">DAA</span>
+    </div>
+  </div>
+
+  <div class="main-wrapper">
+    <div class="breadcrumb">
+      <a href="/">Dashboard</a><span class="breadcrumb-sep">›</span>
+      <span>ML Model</span>
+    </div>
+
+    <div class="content-grid">
+      <!-- Controls + output -->
+      <div style="display:flex;flex-direction:column;gap:20px;">
+
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title"><span class="dot"></span> Train &amp; Predict</div>
+          </div>
+          <div class="panel-body" style="display:flex;flex-direction:column;gap:14px;">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+              <button class="btn btn-success" onclick="doTrain()" id="btnTrain">🤖 Train Model</button>
+              <button class="btn btn-purple" onclick="doPredict(30)"  id="btnP30">🔮 Predict +30s</button>
+              <button class="btn btn-purple" onclick="doPredict(60)"  id="btnP60">🔮 Predict +60s</button>
+              <button class="btn btn-purple" onclick="doPredict(120)" id="btnP120">🔮 Predict +120s</button>
+            </div>
+            <div id="output" class="info">Train the model first, then run predictions.</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title"><span class="dot" style="background:var(--accent-green);box-shadow:0 0 6px var(--accent-green)"></span> Regression Chart</div>
+            <div style="font-size:11px;color:var(--text-muted);">Actual vs predicted trend</div>
+          </div>
+          <div class="panel-body">
+            <canvas id="modelChart"></canvas>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Info sidebar -->
+      <div class="sidebar-panel">
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title"><span class="dot" style="background:var(--accent-purple);box-shadow:0 0 6px var(--accent-purple)"></span> Model Info</div>
+          </div>
+          <div class="panel-body">
+            <div class="stat-row"><span class="stat-key">Algorithm</span><span class="stat-val" style="color:var(--accent-purple);font-size:11px;">Linear Regression</span></div>
+            <div class="stat-row"><span class="stat-key">Library</span><span class="stat-val" style="font-size:11px;">scikit-learn</span></div>
+            <div class="stat-row"><span class="stat-key">Feature</span><span class="stat-val" style="font-size:11px;">Δ time (seconds)</span></div>
+            <div class="stat-row"><span class="stat-key">Target</span><span class="stat-val" style="font-size:11px;">used_mb</span></div>
+            <div class="stat-row"><span class="stat-key">Train window</span><span class="stat-val" id="trainWindow">300 samples</span></div>
+            <div class="stat-row"><span class="stat-key">DB samples</span><span class="stat-val" id="dbSamples">—</span></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title"><span class="dot" style="background:var(--accent-blue);box-shadow:0 0 6px var(--accent-blue)"></span> DAA Allocator</div>
+          </div>
+          <div class="panel-body">
+            <div class="stat-row"><span class="stat-key">Strategy</span><span class="stat-val" style="font-size:11px;">Predictive Alloc</span></div>
+            <div class="stat-row"><span class="stat-key">Last alloc</span><span class="stat-val" id="lastAlloc">—</span></div>
+            <div class="stat-row"><span class="stat-key">Predicted MB</span><span class="stat-val" id="predMB" style="color:var(--accent-cyan);">—</span></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title"><span class="dot" style="background:var(--accent-orange);box-shadow:0 0 6px var(--accent-orange)"></span> Prediction Log</div>
+          </div>
+          <div class="panel-body" style="padding:0;">
+            <table style="width:100%;">
+              <thead><tr><th>Horizon</th><th>Predicted MB</th></tr></thead>
+              <tbody id="predLog"><tr><td colspan="2" style="text-align:center;color:var(--text-muted);padding:16px;">No predictions yet</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  let modelChart = null;
+  const predHistory = [];
+
+  function toggleSidebar() {
+    document.getElementById("sidebar").classList.toggle("collapsed");
+    document.getElementById("pageContent").classList.toggle("full");
+    document.getElementById("sidebarOpenBtn").classList.toggle("visible");
+  }
+
+  function fmtTime(ep) { return ep ? new Date(ep*1000).toLocaleTimeString() : "—"; }
+
+  function showToast(msg, type="success") {
+    const t = document.getElementById("toast");
+    t.innerHTML = `<span>${type==="success"?"✅":"❌"}</span><span>${msg}</span>`;
+    t.className = `show toast-${type}`;
+    clearTimeout(t._t);
+    t._t = setTimeout(() => t.className="", 3000);
+  }
+
+  function setOutput(msg, type="info") {
+    const el = document.getElementById("output");
+    el.className = type;
+    el.innerText = msg;
+  }
+
+  function setBusy(id, busy) {
+    const b = document.getElementById(id);
+    if (!b) return;
+    b.disabled = busy;
+    if (busy) { b._o = b.innerHTML; b.innerHTML = '<span class="spinner"></span> Working…'; }
+    else if (b._o) b.innerHTML = b._o;
+  }
+
+  function doTrain() {
+    setBusy("btnTrain", true);
+    fetch("/train")
+      .then(async r => { const j = await r.json(); if (!r.ok) throw j; return j; })
+      .then(d => {
+        setOutput(`✅ Trained on ${d.meta?.samples ?? "?"} samples`, "success");
+        showToast("Model trained", "success");
+        if (d.history) plotModel(d.history);
+        document.getElementById("dbSamples").textContent = d.meta?.samples ?? "—";
+      })
+      .catch(e => { setOutput("⚠️ " + (e?.error ?? e), "error"); showToast(e?.error ?? "Train failed", "error"); })
+      .finally(() => setBusy("btnTrain", false));
+  }
+
+  function doPredict(secs) {
+    const id = `btnP${secs}`;
+    setBusy(id, true);
+    fetch(`/predict/${secs}`)
+      .then(async r => { const j = await r.json(); if (!r.ok) throw j; return j; })
+      .then(d => {
+        setOutput(`🔮 +${secs}s → ${d.predicted_usage} MB\n   Target: ${fmtTime(d.time)}`, "info");
+        showToast(`+${secs}s: ${d.predicted_usage} MB`, "success");
+        document.getElementById("predMB").textContent = d.predicted_usage + " MB";
+        document.getElementById("lastAlloc").textContent = fmtTime(d.time);
+        predHistory.unshift({ secs, mb: d.predicted_usage });
+        renderPredLog();
+      })
+      .catch(e => { setOutput("⚠️ " + (e?.error ?? e), "error"); showToast(e?.error ?? "Predict failed", "error"); })
+      .finally(() => setBusy(id, false));
+  }
+
+  function renderPredLog() {
+    const tbody = document.getElementById("predLog");
+    if (!predHistory.length) return;
+    tbody.innerHTML = predHistory.slice(0, 10).map(p =>
+      `<tr><td class="td-time">+${p.secs}s</td><td class="td-usage">${p.mb} MB</td></tr>`
+    ).join("");
+  }
+
+  function plotModel(history) {
+    const ctx = document.getElementById("modelChart").getContext("2d");
+    const keys = Object.keys(history);
+    if (!keys.length) return;
+    const palette = ["#3b82f6","#10b981","#8b5cf6","#f59e0b"];
+    const datasets = keys.map((k, i) => ({
+      label: k,
+      data: history[k].map(h => h[1]),
+      borderColor: palette[i % palette.length],
+      backgroundColor: palette[i % palette.length] + "18",
+      fill: true, tension: 0.4, pointRadius: 3, borderWidth: 2
+    }));
+    const labels = history[keys[0]].map(h => fmtTime(h[0]));
+    if (modelChart) modelChart.destroy();
+    modelChart = new Chart(ctx, {
+      type: "line",
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { labels: { color: "#94a3b8", font: { family: "Inter", size: 12 }, boxWidth: 12 } },
+          tooltip: { backgroundColor: "#111827", borderColor: "#1e293b", borderWidth: 1, titleColor: "#f1f5f9", bodyColor: "#94a3b8", padding: 10 }
+        },
+        scales: {
+          y: { ticks: { color: "#475569", font: { family: "JetBrains Mono", size: 11 } }, grid: { color: "rgba(30,41,59,0.8)" }, title: { display: true, text: "MB", color: "#475569" } },
+          x: { ticks: { color: "#475569", font: { family: "JetBrains Mono", size: 10 }, maxTicksLimit: 10 }, grid: { color: "rgba(30,41,59,0.4)" } }
+        }
+      }
+    });
+  }
+
+  window.onload = () => {
+    fetch("/status").then(r=>r.json()).then(s => {
+      document.getElementById("dbSamples").textContent = s.samples ?? "—";
+      document.getElementById("trainWindow").textContent = (s.train_window ?? 300) + " samples";
+    });
+  };
+</script>
+</body>
+</html>

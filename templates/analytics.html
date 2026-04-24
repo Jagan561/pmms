@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Analytics · PMMS</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="app-shell">
+
+{% with active="analytics" %}{% include "_nav.html" %}{% endwith %}
+
+<div class="page-content" id="pageContent">
+  <div class="page-header">
+    <div>
+      <div class="page-header-title">📈 Analytics</div>
+      <div class="page-header-sub">RAM trends, distribution & statistics</div>
+    </div>
+    <div class="page-header-right">
+      <button class="btn btn-primary" onclick="loadAll()" id="btnRefresh">
+        <span>🔄</span> Refresh
+      </button>
+    </div>
+  </div>
+
+  <div class="main-wrapper">
+    <div class="breadcrumb">
+      <a href="/">Dashboard</a><span class="breadcrumb-sep">›</span>
+      <span>Analytics</span>
+    </div>
+
+    <!-- Stats row -->
+    <div class="metrics-grid" style="margin-bottom:24px;">
+      <div class="metric-card blue">
+        <div class="metric-icon">📊</div>
+        <div class="metric-label">Avg RAM Used</div>
+        <div class="metric-value" id="statAvg">—</div>
+        <div class="metric-sub">MB average</div>
+      </div>
+      <div class="metric-card green">
+        <div class="metric-icon">⬇</div>
+        <div class="metric-label">Min RAM</div>
+        <div class="metric-value" id="statMin">—</div>
+        <div class="metric-sub">MB minimum</div>
+      </div>
+      <div class="metric-card orange">
+        <div class="metric-icon">⬆</div>
+        <div class="metric-label">Max RAM</div>
+        <div class="metric-value" id="statMax">—</div>
+        <div class="metric-sub">MB maximum</div>
+      </div>
+      <div class="metric-card purple">
+        <div class="metric-icon">📉</div>
+        <div class="metric-label">Std Dev</div>
+        <div class="metric-value" id="statStd">—</div>
+        <div class="metric-sub">MB deviation</div>
+      </div>
+    </div>
+
+    <div class="content-grid">
+      <!-- Trend chart -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title"><span class="dot"></span> RAM Usage Trend</div>
+          <div style="font-size:11px;color:var(--text-muted);">All samples · ascending</div>
+        </div>
+        <div class="panel-body">
+          <canvas id="trendChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Bar chart -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title"><span class="dot" style="background:var(--accent-purple);box-shadow:0 0 6px var(--accent-purple)"></span> Usage Distribution</div>
+          <div style="font-size:11px;color:var(--text-muted);">Bucketed histogram</div>
+        </div>
+        <div class="panel-body">
+          <canvas id="distChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Percent over time -->
+    <div class="panel" style="margin-top:20px;">
+      <div class="panel-header">
+        <div class="panel-title"><span class="dot" style="background:var(--accent-orange);box-shadow:0 0 6px var(--accent-orange)"></span> RAM % Over Time</div>
+      </div>
+      <div class="panel-body">
+        <canvas id="pctChart"></canvas>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  let trendC = null, distC = null, pctC = null;
+
+  function toggleSidebar() {
+    document.getElementById("sidebar").classList.toggle("collapsed");
+    document.getElementById("pageContent").classList.toggle("full");
+    document.getElementById("sidebarOpenBtn").classList.toggle("visible");
+  }
+
+  function fmtTimeShort(ep) {
+    return new Date(ep * 1000).toLocaleTimeString();
+  }
+
+  function showToast(msg, type="success") {
+    const t = document.getElementById("toast");
+    t.innerHTML = `<span>${type==="success"?"✅":"❌"}</span><span>${msg}</span>`;
+    t.className = `show toast-${type}`;
+    clearTimeout(t._t);
+    t._t = setTimeout(() => t.className="", 3000);
+  }
+
+  const chartDefaults = {
+    responsive: true,
+    animation: { duration: 500 },
+    plugins: {
+      legend: { labels: { color: "#94a3b8", font: { family: "Inter", size: 12 }, boxWidth: 12 } },
+      tooltip: { backgroundColor: "#111827", borderColor: "#1e293b", borderWidth: 1, titleColor: "#f1f5f9", bodyColor: "#94a3b8", padding: 10 }
+    },
+    scales: {
+      y: { ticks: { color: "#475569", font: { family: "JetBrains Mono", size: 11 } }, grid: { color: "rgba(30,41,59,0.8)" } },
+      x: { ticks: { color: "#475569", font: { family: "JetBrains Mono", size: 10 }, maxTicksLimit: 12 }, grid: { color: "rgba(30,41,59,0.4)" } }
+    }
+  };
+
+  function loadAll() {
+    document.getElementById("btnRefresh").disabled = true;
+    fetch("/data")
+      .then(r => r.json())
+      .then(rows => {
+        if (!rows.length) { showToast("No data yet — sample RAM first", "error"); return; }
+
+        const usages = rows.map(r => r.usage);
+        const pcts   = rows.map(r => r.percent ?? 0);
+        const labels = rows.map(r => fmtTimeShort(r.time));
+
+        // Stats
+        const avg = usages.reduce((a,b)=>a+b,0)/usages.length;
+        const mn  = Math.min(...usages);
+        const mx  = Math.max(...usages);
+        const std = Math.sqrt(usages.map(v=>(v-avg)**2).reduce((a,b)=>a+b,0)/usages.length);
+        document.getElementById("statAvg").textContent = avg.toFixed(0);
+        document.getElementById("statMin").textContent = mn;
+        document.getElementById("statMax").textContent = mx;
+        document.getElementById("statStd").textContent = std.toFixed(1);
+
+        // Trend chart
+        if (trendC) trendC.destroy();
+        trendC = new Chart(document.getElementById("trendChart").getContext("2d"), {
+          type: "line",
+          data: { labels, datasets: [{ label: "Used RAM (MB)", data: usages, borderColor: "#3b82f6", backgroundColor: "#3b82f618", fill: true, tension: 0.4, pointRadius: 2, borderWidth: 2 }] },
+          options: { ...chartDefaults, plugins: { ...chartDefaults.plugins }, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, title: { display: true, text: "MB", color: "#475569" } } } }
+        });
+
+        // Distribution histogram
+        const buckets = 8;
+        const step = (mx - mn) / buckets || 1;
+        const bucketLabels = [];
+        const bucketCounts = new Array(buckets).fill(0);
+        for (let i = 0; i < buckets; i++) bucketLabels.push(`${Math.round(mn + i*step)}–${Math.round(mn + (i+1)*step)}`);
+        usages.forEach(v => {
+          const idx = Math.min(Math.floor((v - mn) / step), buckets - 1);
+          bucketCounts[idx]++;
+        });
+        if (distC) distC.destroy();
+        distC = new Chart(document.getElementById("distChart").getContext("2d"), {
+          type: "bar",
+          data: { labels: bucketLabels, datasets: [{ label: "Count", data: bucketCounts, backgroundColor: "#8b5cf680", borderColor: "#8b5cf6", borderWidth: 1, borderRadius: 4 }] },
+          options: { ...chartDefaults, plugins: { ...chartDefaults.plugins }, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, title: { display: true, text: "Count", color: "#475569" } } } }
+        });
+
+        // Percent chart
+        if (pctC) pctC.destroy();
+        pctC = new Chart(document.getElementById("pctChart").getContext("2d"), {
+          type: "line",
+          data: { labels, datasets: [{ label: "RAM %", data: pcts, borderColor: "#f59e0b", backgroundColor: "#f59e0b18", fill: true, tension: 0.4, pointRadius: 2, borderWidth: 2 }] },
+          options: { ...chartDefaults, plugins: { ...chartDefaults.plugins }, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, min: 0, max: 100, title: { display: true, text: "%", color: "#475569" } } } }
+        });
+
+        showToast("Analytics refreshed", "success");
+      })
+      .catch(() => showToast("Failed to load data", "error"))
+      .finally(() => document.getElementById("btnRefresh").disabled = false);
+  }
+
+  window.onload = loadAll;
+</script>
+</body>
+</html>
