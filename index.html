@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PMMS Dashboard</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body {
+  font-family: Arial;
+  background: #0f172a;
+  color: white;
+  text-align: center;
+}
+.container {
+  margin-top: 40px;
+}
+.card {
+  background: #1e293b;
+  padding: 20px;
+  margin: 10px;
+  border-radius: 10px;
+}
+button {
+  padding: 10px 20px;
+  margin: 10px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+</style>
+
+</head>
+
+<body>
+
+<h1>⚡ PMMS Dashboard (Demo)</h1>
+
+<div class="container">
+
+<div class="card">
+<h2>Used RAM</h2>
+<p id="used">-- MB</p>
+</div>
+
+<div class="card">
+<h2>RAM %</h2>
+<p id="percent">-- %</p>
+</div>
+
+<div class="card">
+<h2>Prediction (Demo)</h2>
+<p id="predict">-- MB</p>
+</div>
+
+<button onclick="sample()">Sample RAM</button>
+<button onclick="predict()">Predict</button>
+
+<canvas id="chart" width="400" height="200"></canvas>
+
+</div>
+
+<script>
+
+let dataPoints = [];
+
+function sample() {
+    let used = Math.floor(Math.random() * 8000) + 1000;
+    let percent = Math.floor(Math.random() * 100);
+
+    document.getElementById("used").innerText = used + " MB";
+    document.getElementById("percent").innerText = percent + " %";
+
+    dataPoints.push(used);
+    updateChart();
+}
+
+function predict() {
+    let pred = Math.floor(Math.random() * 8000) + 1000;
+    document.getElementById("predict").innerText = pred + " MB";
+}
+
+let ctx = document.getElementById('chart').getContext('2d');
+
+let chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [{
+            label: 'RAM Usage',
+            data: [],
+        }]
+    }
+});
+
+function updateChart() {
+    chart.data.labels.push(dataPoints.length);
+    chart.data.datasets[0].data = dataPoints;
+    chart.update();
+}
+
+</script>
+
+</body>
+</html>
